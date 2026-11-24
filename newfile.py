@@ -15,7 +15,7 @@ import yt_dlp
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = os.getenv("9231872468:AAF5b1EG0ci249DoevIcCJ6P22SwSLh4glU:BOT_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 MAX_TG_FILE_SIZE = 50 * 1024 * 1024  # Лимит Bot API — 50 МБ
 
 # Не более 2 одновременных скачиваний, чтобы не упереться в 512 МБ RAM на Render Free

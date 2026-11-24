@@ -3,6 +3,8 @@ import base64
 import logging
 import os
 import re
+import shutil
+import sys
 import tempfile
 from pathlib import Path
 
@@ -12,7 +14,7 @@ from aiogram.filters import CommandStart
 from aiogram.types import FSInputFile, Message
 import yt_dlp
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, stream=sys.stdout, force=True)
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -20,12 +22,13 @@ MAX_TG_FILE_SIZE = 50 * 1024 * 1024  # Лимит Bot API — 50 МБ
 
 # Не более 2 одновременных скачиваний, чтобы не упереться в 512 МБ RAM на Render Free
 DOWNLOAD_SEMAPHORE = asyncio.Semaphore(2)
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 COOKIE_ENV_MAP = {
-    "instagram": ("INSTAGRAM_COOKIES_B64", "/tmp/tiktok_cookies.txt"),
+    "instagram": ("INSTAGRAM_COOKIES_B64", "/tmp/instagram_cookies.txt"),
     "tiktok": ("TIKTOK_COOKIES_B64", "/tmp/tiktok_cookies.txt"),
     "youtube": ("YOUTUBE_COOKIES_B64", "/tmp/youtube_cookies.txt"),
-    }
+}
 
 PLATFORM_NAMES = {
     "instagram": "Instagram",
@@ -52,7 +55,7 @@ PLATFORM_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     (
         "youtube",
         re.compile(
-            r"https?://(?:www\.|m\.)?youtube\.com/shorts/[\w-]+[^\s]*",
+            r"https?://(?:(?:www\.|m\.)?youtube\.com/shorts/|youtu\.be/)[\w-]+[^\s]*",
             re.IGNORECASE,
         ),
     ),
@@ -87,6 +90,18 @@ def detect_source(text: str) -> tuple[str, str] | None:
     return None
 
 
+def normalize_url(platform: str, url: str) -> str:
+    """Преобразует ссылку Shorts в стандартный формат watch?v=ID."""
+    if platform == "youtube":
+        return re.sub(
+            r"https?://(?:www\.|m\.)?youtube\.com/shorts/([\w-]+).*",
+            r"https://www.youtube.com/watch?v=\1",
+            url,
+            flags=re.IGNORECASE,
+        )
+    return url
+
+
 def build_ydl_opts(platform: str, tmpdir: str, cookiefile: str | None) -> dict:
     """Формирует оптимальные параметры yt-dlp под конкретную платформу."""
     opts: dict = {
@@ -95,7 +110,7 @@ def build_ydl_opts(platform: str, tmpdir: str, cookiefile: str | None) -> dict:
         "noplaylist": True,
         "playlist_items": "1",
         "quiet": True,
-        "no_warnings": True,
+        "no_warnings": False,
         "retries": 3,
         # H.264 + MP4 гарантирует корректное воспроизведение в Telegram на iOS и Android
         "format_sort": ["vcodec:h264", "res:1080", "ext:mp4:m4a"],
@@ -108,15 +123,8 @@ def build_ydl_opts(platform: str, tmpdir: str, cookiefile: str | None) -> dict:
             "bv*[ext=mp4][height<=1080]+ba[ext=m4a]/"
             "bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b"
         )
+        opts["source_address"] = "0.0.0.0"  # Принудительный IPv4
         opts["remote_components"] = ["ejs:github"]
-        if cookiefile and os.path.exists(cookiefile):
-            opts["extractor_args"] = {
-                "youtube": {"player_client": ["tv", "web_safari", "web"]}
-            }
-        else:
-            opts["extractor_args"] = {
-                "youtube": {"player_client": ["android_vr", "tv", "web"]}
-            }
     else:
         opts["format"] = "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b"
         opts["http_headers"] = {
@@ -135,6 +143,7 @@ def build_ydl_opts(platform: str, tmpdir: str, cookiefile: str | None) -> dict:
 
 def download_video(platform: str, url: str, tmpdir: str, cookiefile: str | None) -> dict:
     """Синхронное скачивание через yt-dlp (выполняется в отдельном потоке)."""
+    url = normalize_url(platform, url)
     ydl_opts = build_ydl_opts(platform, tmpdir, cookiefile)
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -221,10 +230,11 @@ async def handle_video_link(message: Message) -> None:
                 await status_msg.delete()
 
     except yt_dlp.utils.DownloadError as exc:
-        logger.warning("Ошибка yt-dlp (%s) для %s: %s", platform, url, exc)
+        clean_err = ANSI_RE.sub("", str(exc))
+        logger.warning("Ошибка yt-dlp (%s) для %s: %s", platform, url, clean_err)
         await status_msg.edit_text(
-            f"Не удалось скачать видео из {platform_label}. "
-            "Проверь, что ролик публичный и ссылка ведет именно на видео."
+            f"Не удалось скачать видео из {platform_label}.\n\n"
+            f"Ошибка: {clean_err[:400]}"
         )
     except Exception as exc:
         logger.exception("Непредвиденная ошибка (%s): %s", platform, exc)
@@ -251,6 +261,13 @@ async def main() -> None:
         raise RuntimeError("Переменная окружения BOT_TOKEN не задана.")
 
     setup_cookies()
+    logger.info(
+        "Окружение: ffmpeg=%s, deno=%s, yt-dlp=%s",
+        shutil.which("ffmpeg"),
+        shutil.which("deno"),
+        getattr(yt_dlp.version, "__version__", "unknown"),
+    )
+
     runner = await start_health_server()
     bot = Bot(token=BOT_TOKEN)
 

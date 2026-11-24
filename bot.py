@@ -102,10 +102,21 @@ def build_ydl_opts(platform: str, tmpdir: str, cookiefile: str | None) -> dict:
     }
 
     if platform == "tiktok":
-        # Единый поток "b" у TikTok берет оригинальный файл воспроизведения без водяного знака
         opts["format"] = "b[ext=mp4]/bv*[ext=mp4]+ba[ext=m4a]/b"
     elif platform == "youtube":
-        opts["format"] = "bv*[ext=mp4][height<=1080]+ba[ext=m4a]/b[ext=mp4][height<=1080]/bv*+ba/b"
+        opts["format"] = (
+            "bv*[ext=mp4][height<=1080]+ba[ext=m4a]/"
+            "bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b"
+        )
+        opts["remote_components"] = ["ejs:github"]
+        if cookiefile and os.path.exists(cookiefile):
+            opts["extractor_args"] = {
+                "youtube": {"player_client": ["tv", "web_safari", "web"]}
+            }
+        else:
+            opts["extractor_args"] = {
+                "youtube": {"player_client": ["android_vr", "tv", "web"]}
+            }
     else:
         opts["format"] = "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b"
         opts["http_headers"] = {

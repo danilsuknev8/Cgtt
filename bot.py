@@ -22,7 +22,7 @@ MAX_TG_FILE_SIZE = 50 * 1024 * 1024  # Лимит Bot API — 50 МБ
 DOWNLOAD_SEMAPHORE = asyncio.Semaphore(2)
 
 COOKIE_ENV_MAP = {
-    "instagram": ("INSTAGRAM_COOKIES_B64", "/tmp/instagram_cookies.txt", "/tmp/tiktok_cookies.txt"),
+    "instagram": ("INSTAGRAM_COOKIES_B64", "/tmp/tiktok_cookies.txt"),
     "tiktok": ("TIKTOK_COOKIES_B64", "/tmp/tiktok_cookies.txt"),
     "youtube": ("YOUTUBE_COOKIES_B64", "/tmp/youtube_cookies.txt"),
     }

@@ -125,6 +125,9 @@ def build_ydl_opts(platform: str, tmpdir: str, cookiefile: str | None) -> dict:
         )
         opts["source_address"] = "0.0.0.0"  # Принудительный IPv4
         opts["remote_components"] = ["ejs:github"]
+        yt_proxy = os.getenv("YOUTUBE_PROXY", "").strip()
+        if yt_proxy:
+            opts["proxy"] = yt_proxy
     else:
         opts["format"] = "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b"
         opts["http_headers"] = {
